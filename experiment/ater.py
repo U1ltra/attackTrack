@@ -36,8 +36,8 @@ class PatchTrainer(object):
         super(PatchTrainer, self).__init__()
 
         # Setup device
-        self.device = device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        torch.backends.cudnn.benchmark = True
+        self.device = device = torch.device('cpu')
+        # torch.backends.cudnn.benchmark = True
 
         # Setup tracker
         self.config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
@@ -79,7 +79,7 @@ class PatchTrainer(object):
         snapshot = join(base_path, self.config.get('train', 'victim_nn'), 'model.pth')
         nnConfig = join(base_path, self.config.get('train', 'victim_nn'), 'config.yaml')
         cfg.merge_from_file(nnConfig)
-        cfg.CUDA = torch.cuda.is_available() and cfg.CUDA
+        cfg.CUDA = False
         self.smooth_lr = cfg.TRACK.LR
 
         # create and load model
@@ -99,6 +99,25 @@ class PatchTrainer(object):
 
         pos_z, size_z = bbox2center_sz(template_bbox)
         pos_x, size_x = bbox2center_sz(track_bbox)
+
+
+        # Add debugging prints
+        if torch.isnan(template_bbox).any():
+            print("3.0 Template bbox contains NaN..")
+            print("Template bbox:", template_bbox)
+        if torch.isnan(track_bbox).any():
+            print("Track bbox contains NaN")
+            print("Track bbox:", track_bbox)
+        
+        # Add NaN checks
+        if torch.isnan(pos_z).any() or torch.isnan(size_z).any():
+            raise ValueError("NaN detected in template position/size")
+            print("Position z:", pos_z)
+            print("Size z:", size_z)
+        if torch.isnan(pos_x).any() or torch.isnan(size_x).any():
+            raise ValueError("NaN detected in tracking position/size")
+            print("Position x:", pos_x)
+            print("Size x:", size_x)
 
         model.template(template_img.to(device),
                        pos_z.to(device),
@@ -304,7 +323,7 @@ class PatchTrainer(object):
 
         # Setup Dataset
         dataset = AttackDataset(video, n_frames=train_nFrames, frame_sample=frame_sample)
-        dataloader = DataLoader(dataset, batch_size=BATCHSIZE, shuffle=True, num_workers=8)
+        dataloader = DataLoader(dataset, batch_size=BATCHSIZE, shuffle=False, num_workers=8)
 
         # Generate patch and setup optimizer
         if config.getboolean('train', 'patch_snapshot') and isfile(config.get('train', 'patch_snapshot_f')):
@@ -321,8 +340,15 @@ class PatchTrainer(object):
                 template_img, template_bbox, search_img, search_bbox = tuple(map(lambda x: x.to(device), data))
 
                 # Gen tracking bbox 
+                if torch.isnan(template_bbox).any():
+                    print("1.0 Template bbox contains NaN")
+                    print("Template bbox:", template_bbox)
+
                 if template_shift:
                     template_bbox = rand_shift(template_img.shape[-2:], template_bbox, template_shift, template_shift, 'random')
+                if torch.isnan(template_bbox).any():
+                    print("2.0 Template bbox contains NaN")
+                    print("Template bbox:", template_bbox)
                 track_bbox = rand_shift(template_img.shape[-2:], search_bbox, shift_pos, shift_wh, target)
                 
                 # # Tracking and get label

@@ -13,6 +13,7 @@ import torch
 import numpy as np
 import kornia
 
+from tqdm import tqdm
 from torchvision import transforms
 from PIL import Image
 from masks import scale_bbox_keep_ar, warp_patch, warp
@@ -126,6 +127,7 @@ class Patch_applier(object):
 def main():
     # load config
     cfg.merge_from_file(args.config)
+    cfg.CUDA = False
 
     cur_dir = os.path.dirname(os.path.realpath(__file__))
     dataset_root = os.path.join(cur_dir, '../testing_dataset', args.dataset)
@@ -134,7 +136,7 @@ def main():
     model = ModelBuilder()
 
     # load model
-    model = load_pretrain(model, args.snapshot).cuda().eval()
+    model = load_pretrain(model, args.snapshot).eval()
 
     # build tracker
     tracker = build_tracker(model)
@@ -145,6 +147,8 @@ def main():
                                             load_img=False)
 
     # setup applier
+    if not args.patch:
+        args.patch = 'None'
     if args.patch != 'None':
         applier = Patch_applier()
 
@@ -159,7 +163,10 @@ def main():
     else:
         video_trained = os.path.split(os.path.split(args.patch)[0])[-1]
         patch_name = os.path.splitext(os.path.split(args.patch)[-1])[0]
-        model_name = video_trained+'_'+patch_name
+        model_name = video_trained+'_'+patch_name + "_patch"
+        # print('Save results to:', model_name)
+        # raise NotImplementedError
+
 
     print('Save results to:', model_name)
                                     
@@ -251,11 +258,18 @@ def main():
                 # test one special video
                 if video.name != args.video:
                     continue
+            if video.name not in ["person6"]: # , "person2_1", "person4_1", "person5_1", "person6"
+                continue
+            
             toc = 0
             pred_bboxes = []
             scores = []
             track_times = []
+
+            pbar = tqdm(total=len(video), desc=f'Processing {video.name}...')
             for idx, (img, gt_bbox) in enumerate(video):
+                pbar.update(1)
+
                 tic = cv2.getTickCount()
                 if args.patch != 'None':
                     img = applier.apply_patch_without_trans(img, gt_bbox)

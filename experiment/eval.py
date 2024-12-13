@@ -27,7 +27,7 @@ parser.add_argument('--num', '-n', default=1, type=int, help='number of thread t
 parser.add_argument('--tracker_prefix', '-t', default='', type=str, help='tracker name')
 parser.add_argument('--show_video_level', '-s', dest='show_video_level', action='store_true')
 parser.add_argument('--vis', dest='vis', action='store_true')
-parser.set_defaults(show_video_level=False)
+parser.set_defaults(show_video_level=True)
 args = parser.parse_args()
 
 

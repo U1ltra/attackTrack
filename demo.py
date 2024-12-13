@@ -33,7 +33,7 @@ args = parser.parse_args()
 
 if __name__ == '__main__':
     # Setup device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cpu')
     torch.backends.cudnn.benchmark = True
 
     # Setup Model
@@ -42,7 +42,6 @@ if __name__ == '__main__':
     if args.resume:
         assert isfile(args.resume), 'Please download {} first.'.format(args.resume)
         siammask = load_pretrain(siammask, args.resume)
-
     siammask.eval().to(device)
 
     # Parse Image file
@@ -54,9 +53,9 @@ if __name__ == '__main__':
     # cv2.setWindowProperty("SiamMask", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     x, y, w, h = 305, 112, 163, 253
     if args.gt_file:
-        with open(args.base_path + '/../' + args.gt_file, "r") as f:
+        with open(args.gt_file, "r") as f:
             gts = f.readlines()
-            split_flag = ',' if ',' in gts[0] else '\t'
+            split_flag = ',' if ',' in gts[0] else ' '
             gts = list(map(lambda x: list(map(int, x.rstrip().split(split_flag))), gts))
             x, y, w, h = gts[0]
     else:

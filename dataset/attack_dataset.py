@@ -46,14 +46,21 @@ class AttackDataset(Dataset):
         if 'VOT2019' in root_dir: json_fname = 'VOT2019.json'
         if 'lasot' in root_dir: json_fname = 'anno.json'
         if 'own' in root_dir: json_fname = 'anno.json'
+        if 'UAV123' in root_dir: json_fname = 'UAV123.json'
         with open(join(root_dir, json_fname), 'r') as f:
             annos = json.load(f)
+
+        # Only keep person1 data
+        if 'person1' in annos:
+            annos = {'person1': annos['person1']}  # Keep only person1
+        else:
+            raise ValueError("person1 not found in the dataset")
 
         # process video resolutions
         img_shapes = []
         for anno in annos.values():
             img_0 = anno['img_names'][0]
-            img_0 = img_0 if 'data' in img_0 else join(root_dir, img_0)
+            img_0 = img_0 if 'testing_dataset' in img_0 else join(root_dir, img_0)
             img_shapes.append( cv2.imread(img_0).shape[0:2] )
         unique, counts = np.unique(np.array(img_shapes), return_counts=True, axis=0)
         video_res = unique[counts.argsort()[::-1]]
@@ -64,26 +71,40 @@ class AttackDataset(Dataset):
         self.img_names = list()
         self.bboxs = list()
         video_lens = list()
-        for anno in annos.values():
-            # # video resolution filter 
-            # img_0 = anno['img_names'][0]
-            # img_0 = img_size if 'data' in img_0 else join(root_dir, img_0)
-            # img_size = cv2.imread(img_0).shape[0:2]
-            # if 'OTB' in root_dir and np.all(img_size != video_res[1]): # [480, 640] for OTB
-            #     continue
-
+        for vid_id, anno in annos.items():
+            valid_indices = []
+            # Get valid frame indices (no NaN in bounding boxes)
+            for idx, bbox in enumerate(anno['gt_rect']):
+                if not any(np.isnan(x) for x in bbox):
+                    valid_indices.append(idx)
+                    
+            if len(valid_indices) < len(anno['gt_rect']):
+                print(f"Warning: Video {vid_id} has {len(anno['gt_rect']) - len(valid_indices)} frames with NaN bboxes")
+                
+            if not valid_indices:  # Skip video if no valid frames
+                continue
+                
             if not n_frames:
-                self.img_names.extend(anno['img_names'])
-                self.bboxs.extend(anno['gt_rect'])
-                video_lens.append(len(anno['img_names']))
+                # Use all valid frames
+                self.img_names.extend([anno['img_names'][i] for i in valid_indices])
+                self.bboxs.extend([anno['gt_rect'][i] for i in valid_indices])
+                video_lens.append(len(valid_indices))
             else:
-                video_len = len(anno['img_names']) if frame_sample == 'random' else n_frames
-                indices = np.random.choice(video_len, n_frames, replace=False)
-                indices.sort()
-                anno_selected = [anno['img_names'][idx] for idx in indices]
-                self.img_names.extend(anno_selected)
-                self.bboxs.extend([anno['gt_rect'][idx] for idx in indices])
-                video_lens.append(len(anno_selected))
+                # Randomly sample from valid frames
+                sample_size = min(n_frames, len(valid_indices))
+                if frame_sample == 'random':
+                    chosen_indices = np.random.choice(valid_indices, sample_size, replace=False)
+                else:
+                    chosen_indices = valid_indices[:sample_size]
+                chosen_indices.sort()
+                
+                self.img_names.extend([anno['img_names'][i] for i in chosen_indices])
+                self.bboxs.extend([anno['gt_rect'][i] for i in chosen_indices])
+                video_lens.append(len(chosen_indices))
+
+        if not self.img_names:
+            raise RuntimeError("No valid frames found in the dataset!")
+        
         self.video_seg = np.add.accumulate(video_lens)
         self.video_seg = np.insert(self.video_seg, 0, 0) 
         assert len(self.bboxs) == len(self.img_names)
@@ -135,6 +156,10 @@ class AttackDataset(Dataset):
         template_bbox = np.array(self.bboxs[template_idx])
         search_bbox = np.array(self.bboxs[search_idx])
        
+        # Double check for NaN (shouldn't happen but just in case)
+        assert not np.any(np.isnan(template_bbox)), f"NaN found in template_bbox at index {template_idx}"
+        assert not np.any(np.isnan(search_bbox)), f"NaN found in search_bbox at index {search_idx}"
+   
         return template_img, template_bbox, search_img, search_bbox
 
 
